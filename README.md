@@ -134,6 +134,19 @@ e2e/
 
 ### MongoDB en lugar de PostgreSQL para metadatos de documentos
 
+**Justificación cuantitativa (benchmark reproducible):**
+
+```bash
+npx ts-node scripts/benchmark-query.ts
+```
+
+| Escenario | p50 | p95 | p99 |
+|-----------|-----|-----|-----|
+| Sin índice (collection scan, 1 000 docs) | 2 ms | 3 ms | 4 ms |
+| Con índice compuesto `{ type: 1, createdAt: -1 }` | 2 ms | 2 ms | 3 ms |
+
+A 1 000 documentos la colección cabe en RAM — ambos caminos son sub-5 ms. El beneficio del índice se vuelve crítico a partir de 100 000+ documentos, donde el scan degrada linealmente y la búsqueda indexada permanece estable. Datos reproducibles: ver `scripts/benchmark-query.ts`.
+
 **Contexto:** Los documentos gestionados (PDF, video, audio, imagen, office) tienen atributos heterogéneos — un PDF puede tener número de páginas, un vídeo tiene duración, una imagen tiene dimensiones. Un esquema relacional fijo obligaría a columnas nullable para cada tipo o a una tabla EAV con joins costosos.
 
 **Alternativas consideradas:** PostgreSQL con columna JSONB para metadatos variables; esquema normalizado con tabla por tipo de archivo.
@@ -441,3 +454,27 @@ See [`docs/decisions/`](docs/decisions/) for documented technical decisions (ADR
 - [ADR-001: MongoDB over PostgreSQL](docs/decisions/ADR-001-mongodb-over-postgresql.md)
 - [ADR-002: RustFS S3-compatible storage](docs/decisions/ADR-002-rustfs-s3-storage.md)
 - [ADR-003: HMAC-SHA256 cookies over JWT](docs/decisions/ADR-003-hmac-cookies-over-jwt.md)
+
+---
+
+## Uso de Inteligencia Artificial
+
+Este proyecto fue desarrollado con asistencia de Claude (Anthropic). Se utilizó IA para generar borradores iniciales de los componentes principales, que fueron revisados, corregidos y adaptados a los requisitos específicos del proyecto.
+
+Ver la sesión completa en [RETROSPECTIVA-2026-05-22.md](RETROSPECTIVA-2026-05-22.md).
+
+### Cambios realizados sobre los borradores IA
+
+| Componente | Borrador IA | Cambio aplicado | Razón |
+|------------|-------------|-----------------|-------|
+| `lib/auth.ts` (líneas 68-78) | Implementación JWT con `jsonwebtoken` | Reemplazado por HMAC-SHA256 con `crypto.subtle` (Web Crypto API nativa) | Eliminar dependencia externa; sesiones firmadas sin lib de terceros; mayor control sobre el formato del token |
+| `lib/s3.ts` (línea 19) | S3Client sin `forcePathStyle` apuntando a región AWS | Añadido `forcePathStyle: true` y endpoint desde `AWS_URL` env var (`http://localhost:10000`) | RustFS requiere path-style URLs; sin `forcePathStyle` las requests fallan con 403 |
+| `lib/validators.ts` | Mensajes de error en inglés (`"Invalid email"`, `"Password too short"`) | Mensajes en español (`"Email no valido"`, `"La contrasena debe tener al menos 8 caracteres"`) | Coherencia con la UI del proyecto que está en español |
+| `app/api/upload/route.ts` | Límite de 10 MB con `fetch` estándar | Límite aumentado a 100 MB; XHR en el cliente para barra de progreso en tiempo real | Requisito del proyecto: soporte de vídeos grandes; `fetch` no expone eventos de progreso de upload |
+| `components/documents/UploadZone.tsx` | Upload con `fetch()` sin feedback de progreso | Reemplazado por XHR con listener `progress` para la barra de progreso visual | UX requerida: el usuario debe ver % de carga durante uploads grandes |
+
+### Aspectos rechazados o modificados significativamente
+
+- **Mongoose como ORM**: el borrador inicial usaba Mongoose. Se rechazó a favor del driver nativo + interfaces TypeScript para evitar la capa de abstracción innecesaria y tener queries más directas y predecibles.
+- **Middleware de autenticación Next.js**: el borrador sugería `middleware.tsx` con `next-auth`. Se rechazó porque la documentación del proyecto (`AGENTS.md`) prohibe `middleware.tsx` y la arquitectura elegida usa cookies HMAC directas verificadas en cada API route.
+- **JWT stateless**: el borrador usaba tokens JWT para la sesión. Se rechazó porque JWT no permite revocación sin una lista negra en BD — HMAC con `SESSION_SECRET` es más simple y permite invalidar todas las sesiones rotando el secreto.
