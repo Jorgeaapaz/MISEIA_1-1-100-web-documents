@@ -8,7 +8,7 @@ export async function GET() {
   try {
     const session = await verifySession();
     if (!session) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+      return NextResponse.json({ user: null });
     }
 
     const db = await getDb();

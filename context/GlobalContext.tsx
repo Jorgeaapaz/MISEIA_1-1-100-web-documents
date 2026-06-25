@@ -23,7 +23,7 @@ export function GlobalProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetch("/api/auth/me")
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => res.json())
       .then((data) => {
         if (data?.user) setUser(data.user);
       })
