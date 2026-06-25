@@ -78,63 +78,80 @@ jobs:
     needs: [build]
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+          VM_HOST: ${{ secrets.GCP_VM_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          # Normalize CRLF→LF in case key was set from Windows
+          sed -i 's/\r//' ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Deploy to GCP VM via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.GCP_VM_HOST }}
-          username: ${{ secrets.GCP_VM_USER }}
-          key: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
-          script: |
-            set -e
+      - name: Write .env.production and copy to VM
+        env:
+          VM_HOST: ${{ secrets.GCP_VM_HOST }}
+          VM_USER: ${{ secrets.GCP_VM_USER }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB: ${{ secrets.MONGODB_DB }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          AWS_USERNAME: ${{ secrets.AWS_USERNAME }}
+          AWS_PASSWORD: ${{ secrets.AWS_PASSWORD }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_URL: ${{ secrets.AWS_URL }}
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          MAILHOG_HOST: ${{ secrets.MAILHOG_HOST }}
+          MAIL_PORT: ${{ secrets.MAIL_PORT }}
+        run: |
+          printf 'MONGODB_URI=%s\n'   "$MONGODB_URI"   >  /tmp/env.production
+          printf 'MONGODB_DB=%s\n'    "$MONGODB_DB"    >> /tmp/env.production
+          printf 'SESSION_SECRET=%s\n' "$SESSION_SECRET" >> /tmp/env.production
+          printf 'AWS_USERNAME=%s\n'  "$AWS_USERNAME"  >> /tmp/env.production
+          printf 'AWS_PASSWORD=%s\n'  "$AWS_PASSWORD"  >> /tmp/env.production
+          printf 'AWS_REGION=%s\n'    "$AWS_REGION"    >> /tmp/env.production
+          printf 'AWS_URL=%s\n'       "$AWS_URL"       >> /tmp/env.production
+          printf 'AWS_BUCKET=%s\n'    "$AWS_BUCKET"    >> /tmp/env.production
+          printf 'MAILHOG_HOST=%s\n'  "$MAILHOG_HOST"  >> /tmp/env.production
+          printf 'MAIL_PORT=%s\n'     "$MAIL_PORT"     >> /tmp/env.production
+          printf 'NEXT_PUBLIC_API_URL=https://web-documents.deviaaps.com\n' >> /tmp/env.production
+          printf 'NODE_ENV=production\n' >> /tmp/env.production
 
-            # Ensure deploy directory exists
-            mkdir -p ~/MISEIA1-1-100_web-documents
-            cd ~/MISEIA1-1-100_web-documents
+          ssh -i ~/.ssh/deploy_key "$VM_USER@$VM_HOST" "mkdir -p ~/MISEIA1-1-100_web-documents"
+          scp -i ~/.ssh/deploy_key /tmp/env.production "$VM_USER@$VM_HOST:~/MISEIA1-1-100_web-documents/.env.production"
 
-            # Pull latest code
-            if [ -d ".git" ]; then
-              git pull origin master
-            else
-              git clone https://github.com/Jorgeaapaz/MISEIA_1-1-100-web-documents.git .
-            fi
+      - name: Deploy on VM
+        env:
+          VM_HOST: ${{ secrets.GCP_VM_HOST }}
+          VM_USER: ${{ secrets.GCP_VM_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "$VM_USER@$VM_HOST" bash << 'ENDSSH'
+          set -e
+          cd ~/MISEIA1-1-100_web-documents
 
-            # Write .env.production from secrets
-            cat > .env.production <<EOF
-            MONGODB_URI=${{ secrets.MONGODB_URI }}
-            MONGODB_DB=${{ secrets.MONGODB_DB }}
-            SESSION_SECRET=${{ secrets.SESSION_SECRET }}
-            AWS_USERNAME=${{ secrets.AWS_USERNAME }}
-            AWS_PASSWORD=${{ secrets.AWS_PASSWORD }}
-            AWS_REGION=${{ secrets.AWS_REGION }}
-            AWS_URL=${{ secrets.AWS_URL }}
-            AWS_BUCKET=${{ secrets.AWS_BUCKET }}
-            MAILHOG_HOST=${{ secrets.MAILHOG_HOST }}
-            MAIL_PORT=${{ secrets.MAIL_PORT }}
-            NEXT_PUBLIC_API_URL=https://web-documents.deviaaps.com
-            NODE_ENV=production
-            EOF
+          if [ -d ".git" ]; then
+            git pull origin master
+          else
+            git clone https://github.com/Jorgeaapaz/MISEIA_1-1-100-web-documents.git .
+          fi
 
-            # Build Docker image
-            docker build -t web-documents:latest .
+          docker build -t web-documents:latest .
+          docker rm -f web-documents 2>/dev/null || true
+          docker run -d \
+            --name web-documents \
+            --restart unless-stopped \
+            --network miseia-net \
+            --env-file ~/MISEIA1-1-100_web-documents/.env.production \
+            --label 'traefik.enable=true' \
+            --label 'traefik.http.routers.web-documents.rule=Host(`web-documents.deviaaps.com`)' \
+            --label 'traefik.http.routers.web-documents.entrypoints=websecure' \
+            --label 'traefik.http.routers.web-documents.tls=true' \
+            --label 'traefik.http.routers.web-documents.tls.certresolver=cloudflare' \
+            --label 'traefik.http.services.web-documents.loadbalancer.server.port=3000' \
+            web-documents:latest
 
-            # Replace running container
-            docker rm -f web-documents 2>/dev/null || true
-            docker run -d \
-              --name web-documents \
-              --restart unless-stopped \
-              --network miseia-net \
-              --env-file .env.production \
-              --label "traefik.enable=true" \
-              --label "traefik.http.routers.web-documents.rule=Host(\`web-documents.deviaaps.com\`)" \
-              --label "traefik.http.routers.web-documents.entrypoints=websecure" \
-              --label "traefik.http.routers.web-documents.tls=true" \
-              --label "traefik.http.routers.web-documents.tls.certresolver=cloudflare" \
-              --label "traefik.http.services.web-documents.loadbalancer.server.port=3000" \
-              web-documents:latest
-
-            # Verify container is running
-            sleep 5
-            docker ps --filter name=web-documents --filter status=running | grep web-documents
-            echo "Deploy completed successfully"
+          sleep 5
+          docker ps --filter name=web-documents --filter status=running | grep web-documents
+          echo "Deploy completed successfully"
+          ENDSSH
