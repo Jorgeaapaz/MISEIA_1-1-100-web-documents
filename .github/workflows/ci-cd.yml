@@ -81,14 +81,14 @@ jobs:
       - name: Setup SSH key
         env:
           SSH_PRIVATE_KEY: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
-          VM_HOST: ${{ secrets.GCP_VM_HOST }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
-          # Normalize CRLF→LF in case key was set from Windows
           sed -i 's/\r//' ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # Disable strict host checking (VM firewall may block keyscan from Actions IPs)
+          printf 'Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
 
       - name: Write .env.production and copy to VM
         env:
