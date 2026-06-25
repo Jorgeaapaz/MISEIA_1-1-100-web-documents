@@ -126,13 +126,17 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key "$VM_USER@$VM_HOST" bash << 'ENDSSH'
           set -e
+          mkdir -p ~/MISEIA1-1-100_web-documents
           cd ~/MISEIA1-1-100_web-documents
 
-          if [ -d ".git" ]; then
-            git pull origin master
-          else
-            git clone https://github.com/Jorgeaapaz/MISEIA_1-1-100-web-documents.git .
+          # Works whether dir is empty, has .env.production, or already has a repo
+          if [ ! -d ".git" ]; then
+            git init
+            git remote add origin https://github.com/Jorgeaapaz/MISEIA_1-1-100-web-documents.git
           fi
+          git fetch origin master
+          git reset --hard origin/master
+          # .env.production is gitignored so reset --hard leaves it untouched
 
           docker build -t web-documents:latest .
           docker rm -f web-documents 2>/dev/null || true
