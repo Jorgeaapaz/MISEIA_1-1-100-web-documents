@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useGlobal } from "@/context/GlobalContext";
 import { Button } from "@/components/ui/Button";
 import { APP_NAME } from "@/utils/constants";
@@ -8,10 +9,12 @@ import { Navbar } from "./Navbar";
 
 export function Header() {
   const { user, setUser, loading } = useGlobal();
+  const router = useRouter();
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
+    router.push("/");
   };
 
   return (
