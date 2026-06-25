@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint .",
+    "test": "jest --coverage --passWithNoTests",
+    "test:ci": "jest --coverage --ci --runInBand --passWithNoTests"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1029.0",

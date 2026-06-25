@@ -126,6 +126,56 @@ e2e/
 
 ---
 
+## Decisiones Técnicas
+
+### MongoDB en lugar de PostgreSQL para metadatos de documentos
+
+**Contexto:** Los documentos gestionados (PDF, video, audio, imagen, office) tienen atributos heterogéneos — un PDF puede tener número de páginas, un vídeo tiene duración, una imagen tiene dimensiones. Un esquema relacional fijo obligaría a columnas nullable para cada tipo o a una tabla EAV con joins costosos.
+
+**Alternativas consideradas:** PostgreSQL con columna JSONB para metadatos variables; esquema normalizado con tabla por tipo de archivo.
+
+**Decisión:** MongoDB con driver nativo (sin ORM) — esquema flexible que acepta cualquier shape de metadatos sin migrations. Ver `lib/db.ts` (singleton) y `lib/types.ts` (interfaces).
+
+**Consecuencias:** Sin validación de FK a nivel de BD; la integridad referencial es responsabilidad de `lib/validators.ts`. No se pueden usar JOINs nativos — `$lookup` reemplaza las relaciones. Sin Mongoose: las interfaces TypeScript en `lib/types.ts` son el único contrato de esquema.
+
+---
+
+### RustFS (S3-compatible) en lugar de MinIO o S3 gestionado
+
+**Contexto:** El proyecto necesita almacenamiento de objetos compatible con AWS S3 SDK para archivos hasta 100 MB. En un entorno de aprendizaje local, los costes de S3 gestionado son innecesarios.
+
+**Alternativas consideradas:** AWS S3 real (coste y credenciales reales requeridas); MinIO (Go-based, más maduro, más pesado).
+
+**Decisión:** RustFS en Docker — servidor S3-compatible escrito en Rust, cero coste, arranca en un contenedor ligero. El cliente en `lib/s3.ts` usa `@aws-sdk/client-s3` estándar, por lo que cambiar a S3 real solo requiere actualizar variables de entorno.
+
+**Consecuencias:** Sin SLA ni replicación. Requiere Docker en el entorno de desarrollo. No está validado para producción con carga alta. Si RustFS falla, los uploads fallan — no hay fallback.
+
+---
+
+### Cookies HMAC-SHA256 en lugar de JWT
+
+**Contexto:** La autenticación necesita sesiones revocables (7 días TTL) sin añadir dependencias externas de signing. JWT es stateless pero requiere `jsonwebtoken` o similar y no permite revocación sin una lista negra.
+
+**Alternativas consideradas:** JWT con `jsonwebtoken` (dependencia externa, tokens stateless no revocables); sesiones en BD con ID de sesión aleatorio (requiere lookup en MongoDB en cada request).
+
+**Decisión:** HMAC-SHA256 personalizado usando la Web Crypto API nativa (`crypto.subtle`). El payload se codifica en base64 y se firma con `SESSION_SECRET`. Ver `lib/auth.ts` — `createSession()`, `verifySession()`, `sign()`.
+
+**Consecuencias:** Sin dependencia de librerías de JWT. La sesión vive solo en la cookie (no en BD), por lo que revocar una sesión específica requiere rotar el `SESSION_SECRET`. Implementación propia que requiere mantenimiento si cambian los requisitos de seguridad.
+
+---
+
+### Driver nativo de MongoDB en lugar de Mongoose
+
+**Contexto:** Mongoose añade schema validation, middleware y helpers útiles, pero también introduce una capa de abstracción con overhead en proyectos donde TypeScript ya cubre el tipado.
+
+**Alternativas consideradas:** Mongoose (ORM-like, schema validation automática); Prisma con adaptador MongoDB.
+
+**Decisión:** Driver nativo `mongodb` con interfaces TypeScript en `lib/types.ts`. El singleton en `lib/db.ts` gestiona la conexión. Toda la validación va a `lib/validators.ts`.
+
+**Consecuencias:** Control total sobre las queries. Sin auto-timestamps (se añaden manualmente en los route handlers). La validación de datos es responsabilidad explícita del código — mayor superficie de error pero mayor transparencia.
+
+---
+
 ## How It Works
 
 A user registers (or logs in) and receives an HMAC-signed session cookie. From the documents list they can upload a file — the client streams it to `/api/upload`, which writes it to RustFS and returns an `s3Key`. The metadata form then POSTs to `/api/documents`, which persists the record in MongoDB. Download requests hit `/api/documents/[id]/download`, which fetches a signed S3 URL and redirects the browser.
