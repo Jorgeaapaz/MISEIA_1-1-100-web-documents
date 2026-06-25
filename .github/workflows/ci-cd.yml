@@ -80,13 +80,11 @@ jobs:
     steps:
       - name: Setup SSH key
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+          SSH_PRIVATE_KEY_B64: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
-          sed -i 's/\r//' ~/.ssh/deploy_key
+          echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          # Disable strict host checking (VM firewall may block keyscan from Actions IPs)
           printf 'Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n' > ~/.ssh/config
           chmod 600 ~/.ssh/config
 
