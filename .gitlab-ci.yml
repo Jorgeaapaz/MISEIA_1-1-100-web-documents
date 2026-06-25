@@ -1,18 +1,70 @@
 stages:
+  - lint
+  - test
   - build
 
 variables:
-  NODE_VERSION: "20"
+  NODE_VERSION: "24"
+  NODE_ENV: "development"
 
-build:
-  stage: build
-  image: node:${NODE_VERSION}-alpine
+.node_cache: &node_cache
   cache:
     key:
       files:
         - package-lock.json
     paths:
       - .npm/
+
+lint:
+  stage: lint
+  image: node:${NODE_VERSION}-alpine
+  <<: *node_cache
+  before_script:
+    - npm ci --cache .npm --prefer-offline
+  script:
+    - npm run lint
+  rules:
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_MERGE_REQUEST_ID
+
+test:
+  stage: test
+  image: node:${NODE_VERSION}-alpine
+  <<: *node_cache
+  variables:
+    NODE_ENV: "test"
+    MONGODB_URI: "mongodb://localhost:27017"
+    MONGODB_DB: "web-documents-test"
+    SESSION_SECRET: "ci-test-secret-placeholder-32chars"
+    AWS_USERNAME: "minioadmin"
+    AWS_PASSWORD: "minioadmin1234"
+    AWS_REGION: "us-east-1"
+    AWS_URL: "http://localhost:10000"
+    AWS_BUCKET: "ia4devs-storage"
+    MAILHOG_HOST: "localhost"
+    MAIL_PORT: "1025"
+    NEXT_PUBLIC_API_URL: "http://localhost:3000"
+  before_script:
+    - npm ci --cache .npm --prefer-offline
+  script:
+    - npm run test:ci
+  coverage: '/Lines\s*:\s*(\d+\.?\d+)%/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+    paths:
+      - coverage/
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_MERGE_REQUEST_ID
+
+build:
+  stage: build
+  image: node:${NODE_VERSION}-alpine
+  <<: *node_cache
   before_script:
     - npm ci --cache .npm --prefer-offline
   script:

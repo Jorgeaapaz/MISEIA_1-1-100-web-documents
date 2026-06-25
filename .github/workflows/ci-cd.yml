@@ -1,0 +1,140 @@
+name: CI/CD
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  # ── Lint ──────────────────────────────────────────────────────────────────────
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+  # ── Test ──────────────────────────────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npm run test:ci
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+  # ── Build ─────────────────────────────────────────────────────────────────────
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Next.js
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL || 'https://web-documents.deviaaps.com' }}
+
+  # ── Deploy (master only) ──────────────────────────────────────────────────────
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to GCP VM via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.GCP_VM_HOST }}
+          username: ${{ secrets.GCP_VM_USER }}
+          key: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+
+            # Ensure deploy directory exists
+            mkdir -p ~/MISEIA1-1-100_web-documents
+            cd ~/MISEIA1-1-100_web-documents
+
+            # Pull latest code
+            if [ -d ".git" ]; then
+              git pull origin master
+            else
+              git clone https://github.com/Jorgeaapaz/MISEIA_1-1-100-web-documents.git .
+            fi
+
+            # Write .env.production from secrets
+            cat > .env.production <<EOF
+            MONGODB_URI=${{ secrets.MONGODB_URI }}
+            MONGODB_DB=${{ secrets.MONGODB_DB }}
+            SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+            AWS_USERNAME=${{ secrets.AWS_USERNAME }}
+            AWS_PASSWORD=${{ secrets.AWS_PASSWORD }}
+            AWS_REGION=${{ secrets.AWS_REGION }}
+            AWS_URL=${{ secrets.AWS_URL }}
+            AWS_BUCKET=${{ secrets.AWS_BUCKET }}
+            MAILHOG_HOST=${{ secrets.MAILHOG_HOST }}
+            MAIL_PORT=${{ secrets.MAIL_PORT }}
+            NEXT_PUBLIC_API_URL=https://web-documents.deviaaps.com
+            NODE_ENV=production
+            EOF
+
+            # Build Docker image
+            docker build -t web-documents:latest .
+
+            # Replace running container
+            docker rm -f web-documents 2>/dev/null || true
+            docker run -d \
+              --name web-documents \
+              --restart unless-stopped \
+              --network miseia-net \
+              --env-file .env.production \
+              --label "traefik.enable=true" \
+              --label "traefik.http.routers.web-documents.rule=Host(\`web-documents.deviaaps.com\`)" \
+              --label "traefik.http.routers.web-documents.entrypoints=websecure" \
+              --label "traefik.http.routers.web-documents.tls=true" \
+              --label "traefik.http.routers.web-documents.tls.certresolver=cloudflare" \
+              --label "traefik.http.services.web-documents.loadbalancer.server.port=3000" \
+              web-documents:latest
+
+            # Verify container is running
+            sleep 5
+            docker ps --filter name=web-documents --filter status=running | grep web-documents
+            echo "Deploy completed successfully"

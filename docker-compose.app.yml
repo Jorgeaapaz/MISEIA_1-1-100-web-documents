@@ -1,0 +1,22 @@
+services:
+  web-documents:
+    image: web-documents:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: web-documents
+    restart: unless-stopped
+    env_file: .env.production
+    networks:
+      - miseia-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web-documents.rule=Host(`web-documents.deviaaps.com`)"
+      - "traefik.http.routers.web-documents.entrypoints=websecure"
+      - "traefik.http.routers.web-documents.tls=true"
+      - "traefik.http.routers.web-documents.tls.certresolver=cloudflare"
+      - "traefik.http.services.web-documents.loadbalancer.server.port=3000"
+
+networks:
+  miseia-net:
+    external: true

@@ -1,5 +1,9 @@
 # MISEIA 1-1-100 — Web Documents
 
+[![CI/CD](https://github.com/Jorgeaapaz/MISEIA_1-1-100-web-documents/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/Jorgeaapaz/MISEIA_1-1-100-web-documents/actions/workflows/ci-cd.yml)
+[![pipeline status](https://gitlab.codecrypto.academy/jorgeaapaz/miseia_1-1-100-web-documents/badges/master/pipeline.svg)](https://gitlab.codecrypto.academy/jorgeaapaz/miseia_1-1-100-web-documents/-/pipelines)
+[![coverage](https://gitlab.codecrypto.academy/jorgeaapaz/miseia_1-1-100-web-documents/badges/master/coverage.svg)](https://gitlab.codecrypto.academy/jorgeaapaz/miseia_1-1-100-web-documents/-/pipelines)
+
 A **Next.js 16 / TypeScript full-stack web application** for managing documents (PDFs, videos, audios, images). Supports user authentication, file upload to S3-compatible storage, metadata management, search/filtering, and email sharing.
 
 ---
@@ -354,3 +358,86 @@ DELETE /api/documents/abc123   (no session cookie)
 | Auth | bcryptjs + Web Crypto (HMAC-SHA256) |
 | Unit Tests | Jest 30 + ts-jest |
 | E2E Tests | Playwright 1.59 |
+
+---
+
+## Live Demo
+
+> **URL:** https://web-documents.deviaaps.com
+
+**Verify the app is running:**
+```bash
+curl -I https://web-documents.deviaaps.com/api/auth/me
+# Expected: HTTP/2 401 — app is up, authentication required
+```
+
+**Test flows:**
+- Register at `https://web-documents.deviaaps.com/register`
+- Upload a document via the web UI at `/documents/upload`
+- Check sent emails at `https://mailhog.deviaaps.com` (MailHog web UI)
+
+---
+
+## Deploy
+
+### Docker (local with existing infrastructure)
+
+```bash
+# 1. Build the Docker image
+docker build -t web-documents:latest .
+
+# 2. Run connected to miseia-net (requires Traefik + miseia-net already running)
+docker run -d \
+  --name web-documents \
+  --restart unless-stopped \
+  --network miseia-net \
+  -e MONGODB_URI=mongodb://mongodb:27017 \
+  -e MONGODB_DB=web-documents \
+  -e SESSION_SECRET=<openssl rand -hex 32> \
+  -e AWS_USERNAME=rustfsadmin \
+  -e AWS_PASSWORD=<your-rustfs-secret> \
+  -e AWS_REGION=us-east-1 \
+  -e AWS_URL=http://rustfs:9000 \
+  -e AWS_BUCKET=ia4devs-storage \
+  -e MAILHOG_HOST=mailhog \
+  -e MAIL_PORT=1025 \
+  -e NEXT_PUBLIC_API_URL=https://web-documents.deviaaps.com \
+  -e NODE_ENV=production \
+  --label "traefik.enable=true" \
+  --label "traefik.http.routers.web-documents.rule=Host(\`web-documents.deviaaps.com\`)" \
+  --label "traefik.http.routers.web-documents.entrypoints=websecure" \
+  --label "traefik.http.routers.web-documents.tls=true" \
+  --label "traefik.http.routers.web-documents.tls.certresolver=cloudflare" \
+  --label "traefik.http.services.web-documents.loadbalancer.server.port=3000" \
+  web-documents:latest
+
+# 3. Or use docker-compose (requires .env.production file)
+docker compose -f docker-compose.app.yml up -d
+
+# 4. Verify
+curl https://web-documents.deviaaps.com/api/auth/me
+# Expected: 401 {"error":"Unauthorized"} — app is running
+```
+
+### CI/CD — Automatic Deploy (GitHub Actions)
+
+Push to `master` triggers the full pipeline:
+1. **lint** — ESLint check
+2. **test** — Jest with coverage (thresholds: 50% branches, 60% functions/lines/statements)
+3. **build** — Next.js production build
+4. **deploy** — SSH into GCP VM (`34.174.56.186`), rebuild Docker image, restart container
+
+Required GitHub Secrets (set with `gh secret set`):
+```
+GCP_SSH_PRIVATE_KEY   GCP_VM_HOST   GCP_VM_USER
+MONGODB_URI           MONGODB_DB    SESSION_SECRET
+AWS_USERNAME          AWS_PASSWORD  AWS_REGION  AWS_URL  AWS_BUCKET
+MAILHOG_HOST          MAIL_PORT
+```
+
+### Architecture Decision Records
+
+See [`docs/decisions/`](docs/decisions/) for documented technical decisions (ADRs):
+- [ADR-001: MongoDB over PostgreSQL](docs/decisions/ADR-001-mongodb-over-postgresql.md)
+- [ADR-002: RustFS S3-compatible storage](docs/decisions/ADR-002-rustfs-s3-storage.md)
+- [ADR-003: HMAC-SHA256 cookies over JWT](docs/decisions/ADR-003-hmac-cookies-over-jwt.md)
