@@ -1,9 +1,5 @@
 # Web Documents — Microaplicación de Gestión de Documentos
 
-[![CI/CD](https://github.com/Jorgeaapaz/MISEIA_1-1-100-web-documents/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/Jorgeaapaz/MISEIA_1-1-100-web-documents/actions/workflows/ci-cd.yml)
-[![pipeline status](https://gitlab.codecrypto.academy/jorgeaapaz/miseia_1-1-100-web-documents/badges/master/pipeline.svg)](https://gitlab.codecrypto.academy/jorgeaapaz/miseia_1-1-100-web-documents/-/pipelines)
-[![coverage](https://gitlab.codecrypto.academy/jorgeaapaz/miseia_1-1-100-web-documents/badges/master/coverage.svg)](https://gitlab.codecrypto.academy/jorgeaapaz/miseia_1-1-100-web-documents/-/pipelines)
-
 Microaplicación **Next.js 16.2.3 (App Router) con TypeScript** de gestión de documentos web que permite a usuarios autenticados subir, organizar, buscar y compartir documentos digitales (PDF, video, audio, imagen) a través de una interfaz moderna, con almacenamiento en S3-compatible (RustFS) y notificaciones por email.
 
 ---
@@ -1084,3 +1080,18 @@ Ver directorio completo: [docs/decisions/](docs/decisions/)
 ---
 
 *Generado con asistencia de [Claude Code](https://claude.ai/claude-code) — Anthropic*
+
+---
+
+## Updates — 2026-06-25
+
+### Cambios detectados respecto a la versión anterior
+
+| Cambio | Detalle |
+|--------|---------|
+| **Cabecera simplificada** | Se eliminaron los badges de CI/CD de GitHub Actions y GitLab del encabezado del README |
+| **RETROSPECTIVA-2026-05-22.md** | Retrospectiva de la sesión de desarrollo del 22 de mayo de 2026 (fase inicial) |
+| **RETROSPECTIVA-2026-06-25.md** | Retrospectiva de la sesión de desarrollo del 25 de junio de 2026 (correcciones producción) |
+| **planImplementacion.md** | Plan de implementación en 8 fases ordenadas por dependencia (boilerplate → app funcional y testeada) |
+| **vid/evaluacion-001.md** | Rúbrica de evaluación del microproyecto (`microproyecto-software-v1` v1.1-repo-only) |
+| **docs/compliance/** | 10 prompts de cumplimiento + reporte consolidado + plan PERT de conformidad |
