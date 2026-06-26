@@ -65,12 +65,10 @@ build:
   stage: build
   image: node:${NODE_VERSION}-alpine
   <<: *node_cache
-  variables:
-    NODE_ENV: "production"
   before_script:
     - npm ci --cache .npm --prefer-offline
   script:
-    - npm run build
+    - NODE_ENV=production npm run build
   artifacts:
     paths:
       - .next/
